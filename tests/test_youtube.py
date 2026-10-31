@@ -85,6 +85,17 @@ class ParseYoutubeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     youtube.parse_youtube_target(value)
 
+    def test_account_buttons(self) -> None:
+        self.assertEqual(youtube.account_buttons("ask"), [])
+        self.assertEqual(youtube.account_buttons("0"), [])
+        self.assertEqual(
+            youtube.account_buttons("1"), ["LEFT"] * 6 + ["ENTER"]
+        )
+        self.assertEqual(
+            youtube.account_buttons("3"),
+            ["LEFT"] * 6 + ["RIGHT", "RIGHT", "ENTER"],
+        )
+
     def test_deeplink_is_v_equals_id(self) -> None:
         target = youtube.parse_youtube_target(
             f"https://www.youtube.com/watch?v={VIDEO}"

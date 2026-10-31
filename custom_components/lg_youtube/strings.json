@@ -68,11 +68,15 @@
         "data": {
           "close_before_play": "Close YouTube before opening a new video",
           "launch_method": "Launch method",
+          "youtube_account": "YouTube account",
+          "account_delay": "Seconds to wait for Who's watching",
           "app_id": "YouTube app id"
         },
         "data_description": {
           "close_before_play": "Used only when YouTube is already on screen. webOS 4 ignores a new video until that app is closed. A cold start sends one launch and does not close anything.",
           "launch_method": "contentTarget sends v= and the video id, which starts the video once. contentId sends the 11-character id. The leanback contentId sends the tv address and can make the app load twice.",
+          "youtube_account": "Account 1 is the leftmost profile. The TV is sent Left until that end, then Right, then OK. Ask on the TV sends no keys. Use that when the profile screen does not appear, or the keys land on the video.",
+          "account_delay": "How long to wait after YouTube opens before those keys are sent. Used only when an account is selected.",
           "app_id": "Detected at pairing. youtube.leanback.v4 is the app on webOS 4.10."
         }
       }
@@ -91,6 +95,20 @@
     }
   },
   "entity": {
+    "select": {
+      "account": {
+        "name": "YouTube account",
+        "state": {
+          "ask": "Ask on the TV",
+          "1": "Account 1",
+          "2": "Account 2",
+          "3": "Account 3",
+          "4": "Account 4",
+          "5": "Account 5",
+          "6": "Account 6"
+        }
+      }
+    },
     "text": {
       "url": {
         "name": "YouTube URL"

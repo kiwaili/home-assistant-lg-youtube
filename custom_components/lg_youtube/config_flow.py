@@ -32,9 +32,12 @@ from homeassistant.helpers.service_info.ssdp import (
 )
 
 from .const import (
+    ACCOUNT_DELAY_SECONDS,
+    CONF_ACCOUNT_DELAY,
     CONF_APP_ID,
     CONF_CLOSE_BEFORE_PLAY,
     CONF_LAUNCH_METHOD,
+    CONF_YOUTUBE_ACCOUNT,
     CONF_SOURCE,
     CONF_SW_VERSION,
     CONF_WEBOS_ENTITY,
@@ -59,6 +62,16 @@ _LAUNCH_METHOD_LABELS = {
     LAUNCH_CONTENT_TARGET: "contentTarget (v= video id)",
     LAUNCH_CONTENT_ID: "contentId (video id)",
     LAUNCH_CONTENT_ID_URL: "contentId (leanback link)",
+}
+
+_ACCOUNT_LABELS = {
+    "ask": "Ask on the TV",
+    "1": "Account 1",
+    "2": "Account 2",
+    "3": "Account 3",
+    "4": "Account 4",
+    "5": "Account 5",
+    "6": "Account 6",
 }
 
 _MANUAL_SCHEMA = vol.Schema(
@@ -489,12 +502,17 @@ class LgYoutubeOptionsFlow(OptionsFlowWithReload):
         """Choose the launch payload and whether to restart YouTube."""
         if user_input is not None:
             app_id = str(user_input[CONF_APP_ID]).strip() or DEFAULT_YOUTUBE_APP_ID
+            account = str(user_input[CONF_YOUTUBE_ACCOUNT])
+            if account not in _ACCOUNT_LABELS:
+                account = "ask"
             return self.async_create_entry(
                 title="",
                 data={
                     CONF_CLOSE_BEFORE_PLAY: bool(user_input[CONF_CLOSE_BEFORE_PLAY]),
                     CONF_APP_ID: app_id,
                     CONF_LAUNCH_METHOD: user_input[CONF_LAUNCH_METHOD],
+                    CONF_YOUTUBE_ACCOUNT: account,
+                    CONF_ACCOUNT_DELAY: int(user_input[CONF_ACCOUNT_DELAY]),
                 },
             )
 
@@ -502,6 +520,9 @@ class LgYoutubeOptionsFlow(OptionsFlowWithReload):
         suggested_app = entry.options.get(
             CONF_APP_ID, entry.data.get(CONF_APP_ID, DEFAULT_YOUTUBE_APP_ID)
         )
+        account = str(entry.options.get(CONF_YOUTUBE_ACCOUNT, "ask"))
+        if account not in _ACCOUNT_LABELS:
+            account = "ask"
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -516,6 +537,15 @@ class LgYoutubeOptionsFlow(OptionsFlowWithReload):
                             CONF_LAUNCH_METHOD, LAUNCH_CONTENT_TARGET
                         ),
                     ): vol.In(_LAUNCH_METHOD_LABELS),
+                    vol.Required(CONF_YOUTUBE_ACCOUNT, default=account): vol.In(
+                        _ACCOUNT_LABELS
+                    ),
+                    vol.Required(
+                        CONF_ACCOUNT_DELAY,
+                        default=entry.options.get(
+                            CONF_ACCOUNT_DELAY, ACCOUNT_DELAY_SECONDS
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
                     vol.Required(CONF_APP_ID, default=suggested_app): cv.string,
                 }
             ),

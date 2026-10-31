@@ -31,4 +31,6 @@ data:
 
 `youtube.com`, `youtu.be`, Shorts, live links, playlists, and an 11-character video id are all accepted.
 
+**YouTube account** picks a profile on Who's watching. Account 1 is the leftmost. Ask on the TV sends no keys.
+
 The TV must be on for pairing. Accept the prompt on the TV within a few seconds. A MAC address is optional and is only used to turn the TV on later.

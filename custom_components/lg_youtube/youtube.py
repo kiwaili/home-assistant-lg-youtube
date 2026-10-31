@@ -73,6 +73,24 @@ def parse_youtube_target(raw: str) -> YoutubeTarget:
     return _build_target(video_id, playlist_id)
 
 
+ACCOUNT_ASK = "ask"
+ACCOUNT_SLOTS = ("1", "2", "3", "4", "5", "6")
+ACCOUNT_EDGE_PRESSES = 6
+
+
+def account_buttons(account: str) -> list[str]:
+    """Remote keys that pick one profile on Who's watching.
+
+    The highlighted profile is whichever account was used last, so the
+    sequence walks to the left edge first. Account 1 is the leftmost
+    profile. An unknown value, including "ask", sends nothing.
+    """
+    if account not in ACCOUNT_SLOTS:
+        return []
+    index = int(account)
+    return ["LEFT"] * ACCOUNT_EDGE_PRESSES + ["RIGHT"] * (index - 1) + ["ENTER"]
+
+
 def youtube_deeplink(target: YoutubeTarget) -> str:
     """Return ``v=<id>`` (and a playlist id) for one YouTube launch.
 

@@ -5,6 +5,11 @@
     }
   },
   "entity": {
+    "select": {
+      "account": {
+        "default": "mdi:account"
+      }
+    },
     "text": {
       "url": {
         "default": "mdi:youtube"

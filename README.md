@@ -79,6 +79,16 @@ data:
 
 The player can also turn the TV on (when a MAC is set) and off, and it can set volume. Play and pause use the TV's media keys; those keys are not reliable inside the YouTube app on every firmware, and the URL launch does not depend on them.
 
+## YouTube account
+
+The device has a **YouTube account** selector. The official app has no way to name a profile in the launch, so this uses the Who's watching screen.
+
+**Ask on the TV** is the default. No remote keys are sent.
+
+**Account 1** is the leftmost profile. Account 2 is the next one to the right, and so on through Account 6. After YouTube opens, the integration waits (6 seconds unless you change it under **Configure**), presses Left until the highlight is on the first profile, presses Right to the account you chose, then OK.
+
+Leave it on **Ask on the TV** when that screen does not appear. Otherwise those keys land on the video.
+
 ## If the app opens but the video does not
 
 Open **Configure** on the integration:

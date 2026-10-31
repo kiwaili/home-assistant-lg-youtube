@@ -21,7 +21,11 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
+    ACCOUNT_DELAY_SECONDS,
+    ACCOUNT_KEY_GAP_SECONDS,
     CLOSE_SETTLE_SECONDS,
+    CONF_ACCOUNT_DELAY,
+    CONF_YOUTUBE_ACCOUNT,
     DUPLICATE_LAUNCH_SECONDS,
     CONF_APP_ID,
     CONF_CLOSE_BEFORE_PLAY,
@@ -42,7 +46,14 @@ from .const import (
     WEBOSTV_DOMAIN,
 )
 from .net import send_wake_on_lan
-from .youtube import YoutubeTarget, parse_youtube_target, youtube_deeplink
+from .youtube import (
+    ACCOUNT_ASK,
+    ACCOUNT_SLOTS,
+    YoutubeTarget,
+    account_buttons,
+    parse_youtube_target,
+    youtube_deeplink,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,6 +125,24 @@ class LgYoutubeRuntime:
     def launch_method(self) -> str:
         """Which launch payload to send. Default matches webOS 4."""
         return str(self.entry.options.get(CONF_LAUNCH_METHOD, LAUNCH_CONTENT_TARGET))
+
+    @property
+    def youtube_account(self) -> str:
+        """Profile slot on Who's watching. ``ask`` sends no remote keys."""
+        raw = str(self.entry.options.get(CONF_YOUTUBE_ACCOUNT, ACCOUNT_ASK))
+        if raw in ACCOUNT_SLOTS:
+            return raw
+        return ACCOUNT_ASK
+
+    @property
+    def account_delay(self) -> float:
+        """Seconds to wait for Who's watching before sending keys."""
+        raw = self.entry.options.get(CONF_ACCOUNT_DELAY, ACCOUNT_DELAY_SECONDS)
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            return float(ACCOUNT_DELAY_SECONDS)
+        return min(20.0, max(1.0, seconds))
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -417,6 +446,46 @@ class LgYoutubeRuntime:
             "Launching %s via %s with %s", app_id, method, youtube_deeplink(target)
         )
         await self._launch_with_method(app_id, target, method)
+        await self._choose_account()
+
+    async def _choose_account(self) -> None:
+        """Confirm a profile when Who's watching is on screen.
+
+        The official app has no account parameter. The highlighted profile
+        is the one used last, so the keys go to the left edge, then right
+        to the chosen slot, then OK. Ask on the TV sends nothing.
+        """
+        buttons = account_buttons(self.youtube_account)
+        if not buttons:
+            return
+        _LOGGER.debug(
+            "Choosing YouTube account %s after %.0f s",
+            self.youtube_account,
+            self.account_delay,
+        )
+        await asyncio.sleep(self.account_delay)
+        try:
+            for button in buttons:
+                await self._send_button(button)
+                await asyncio.sleep(ACCOUNT_KEY_GAP_SECONDS)
+        except _COMMAND_ERRORS:
+            _LOGGER.warning(
+                "Could not choose YouTube account %s", self.youtube_account
+            )
+
+    async def _send_button(self, button: str) -> None:
+        """Send one remote key through the webOS connection."""
+        if self.uses_webos_connection:
+            await self.hass.services.async_call(
+                WEBOSTV_DOMAIN,
+                "button",
+                {"entity_id": self.webos_entity_id, "button": button},
+                blocking=True,
+            )
+            return
+        if self.client is None:
+            raise HomeAssistantError("The LG TV is not connected.")
+        await self.client.button(button)
 
     async def _launch_with_method(
         self, app_id: str, target: YoutubeTarget, method: str
