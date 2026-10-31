@@ -10,7 +10,7 @@
           "mac": "MAC address"
         },
         "data_description": {
-          "host": "IP address or host name. A pasted http:// URL is accepted.",
+          "host": "IP address or host name. A pasted address that includes a scheme is accepted.",
           "mac": "Optional. Needed for the power button to turn the TV on."
         }
       },
@@ -50,7 +50,7 @@
     "step": {
       "init": {
         "title": "YouTube launch",
-        "description": "webOS 4.10 opens YouTube with contentTarget set to http://www.youtube.com/tv?v=VIDEO_ID. Switch the launch method only if the app opens and the video does not.",
+        "description": "webOS 4.10 opens YouTube with contentTarget set to the leanback tv link and the video id. Switch the launch method only if the app opens and the video does not.",
         "data": {
           "close_before_play": "Close YouTube before opening a new video",
           "launch_method": "Launch method",
@@ -58,7 +58,7 @@
         },
         "data_description": {
           "close_before_play": "webOS 4 ignores a second launch while YouTube is already on screen. Turn this off only if closing the app causes a problem.",
-          "launch_method": "contentTarget is the webOS 4 method. contentId sends the 11-character video id. contentId (tv URL) sends the http://www.youtube.com/tv link as contentId.",
+          "launch_method": "contentTarget is the webOS 4 method. contentId sends the 11-character video id. The tv-link contentId sends that same leanback link as contentId.",
           "app_id": "Detected at pairing. youtube.leanback.v4 is the app on webOS 4.10."
         }
       }
