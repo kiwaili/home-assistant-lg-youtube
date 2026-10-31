@@ -22,6 +22,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CLOSE_SETTLE_SECONDS,
+    DUPLICATE_LAUNCH_SECONDS,
     CONF_APP_ID,
     CONF_CLOSE_BEFORE_PLAY,
     CONF_LAUNCH_METHOD,
@@ -41,7 +42,7 @@ from .const import (
     WEBOSTV_DOMAIN,
 )
 from .net import send_wake_on_lan
-from .youtube import YoutubeTarget, parse_youtube_target
+from .youtube import YoutubeTarget, parse_youtube_target, youtube_deeplink
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ class LgYoutubeRuntime:
         self.host: str = entry.data.get(CONF_HOST, "")
         self.last_input: str | None = None
         self.last_target: YoutubeTarget | None = None
+        self._recent_target: YoutubeTarget | None = None
+        self._recent_launch_at = 0.0
         self._listeners: list[Callable[[], None]] = []
         self._lock = asyncio.Lock()
         self._unsub_linked: Callable[[], None] | None = None
@@ -361,15 +364,45 @@ class LgYoutubeRuntime:
             f"LG TV at {self.host} did not come online after Wake-on-LAN"
         ) from last_error
 
-    async def _launch(self, target: YoutubeTarget) -> None:
-        """Close YouTube if it is running, then launch the video.
-
-        On webOS 4.10 a second ``launch`` while YouTube is already the
-        foreground app is ignored. Closing first is a no-op when the app is
-        not open. The default payload is the one klattimer/LGWebOSRemote sends.
-        """
+    def _youtube_is_foreground(self) -> bool:
+        """True when the TV is already showing YouTube."""
         app_id = self.youtube_app_id
-        if self.close_before_play:
+        if self.uses_webos_connection:
+            state = self.hass.states.get(self.webos_entity_id)
+            if state is None:
+                return False
+            if state.attributes.get("app_id") == app_id:
+                return True
+            source = state.attributes.get("source")
+            return isinstance(source, str) and "youtube" in source.lower()
+        client = self.client
+        if client is None or not client.is_connected():
+            return False
+        return client.tv_state.current_app_id == app_id
+
+    async def _launch(self, target: YoutubeTarget) -> None:
+        """Open the video with one launch.
+
+        A full leanback URL makes YouTube boot, then load that page, so the
+        app shows its loading screen twice. The default parameter is
+        ``v=<video id>``. webOS 4 also ignores a launch while YouTube is
+        already in front, so a video that replaces one already playing
+        closes the app first. A cold start does not. A second request for
+        the same video while the first is still opening is ignored, because
+        that second launch is what restarts the loading screen.
+        """
+        now = time.monotonic()
+        if (
+            self._recent_target == target
+            and now - self._recent_launch_at < DUPLICATE_LAUNCH_SECONDS
+        ):
+            _LOGGER.debug(
+                "Ignoring a repeated launch of %s", target.content_target
+            )
+            return
+
+        app_id = self.youtube_app_id
+        if self.close_before_play and self._youtube_is_foreground():
             try:
                 await self._tv_request(EP_CLOSE, {"id": app_id})
             except _COMMAND_ERRORS:
@@ -377,26 +410,21 @@ class LgYoutubeRuntime:
             else:
                 await asyncio.sleep(CLOSE_SETTLE_SECONDS)
 
+        self._recent_target = target
+        self._recent_launch_at = time.monotonic()
         method = self.launch_method
         _LOGGER.debug(
-            "Launching %s via %s with %s", app_id, method, target.content_target
+            "Launching %s via %s with %s", app_id, method, youtube_deeplink(target)
         )
-        try:
-            await self._launch_with_method(app_id, target, method)
-        except _COMMAND_ERRORS:
-            fallback = (
-                LAUNCH_CONTENT_ID
-                if method == LAUNCH_CONTENT_TARGET
-                else LAUNCH_CONTENT_TARGET
-            )
-            _LOGGER.debug("%s launch failed; trying %s", method, fallback)
-            await self._launch_with_method(app_id, target, fallback)
+        await self._launch_with_method(app_id, target, method)
 
     async def _launch_with_method(
         self, app_id: str, target: YoutubeTarget, method: str
     ) -> None:
         if method == LAUNCH_CONTENT_ID and target.video_id:
-            await self._tv_request(EP_LAUNCH, {"id": app_id, "contentId": target.video_id})
+            await self._tv_request(
+                EP_LAUNCH, {"id": app_id, "contentId": target.video_id}
+            )
             return
         if method == LAUNCH_CONTENT_ID_URL:
             await self._tv_request(
@@ -405,7 +433,7 @@ class LgYoutubeRuntime:
             return
         await self._tv_request(
             EP_LAUNCH,
-            {"id": app_id, "params": {"contentTarget": target.content_target}},
+            {"id": app_id, "params": {"contentTarget": youtube_deeplink(target)}},
         )
 
     async def _tv_request(self, command: str, payload: dict[str, Any]) -> None:

@@ -55,6 +55,12 @@ from .youtube import find_youtube_app_id
 
 _LOGGER = logging.getLogger(__name__)
 
+_LAUNCH_METHOD_LABELS = {
+    LAUNCH_CONTENT_TARGET: "contentTarget (v= video id)",
+    LAUNCH_CONTENT_ID: "contentId (video id)",
+    LAUNCH_CONTENT_ID_URL: "contentId (leanback link)",
+}
+
 _MANUAL_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): cv.string,

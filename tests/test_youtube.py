@@ -85,6 +85,19 @@ class ParseYoutubeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     youtube.parse_youtube_target(value)
 
+    def test_deeplink_is_v_equals_id(self) -> None:
+        target = youtube.parse_youtube_target(
+            f"https://www.youtube.com/watch?v={VIDEO}"
+        )
+        self.assertEqual(youtube.youtube_deeplink(target), f"v={VIDEO}")
+        playlist = "PL1234567890abcdef"
+        with_list = youtube.parse_youtube_target(
+            f"https://www.youtube.com/watch?v={VIDEO}&list={playlist}"
+        )
+        self.assertEqual(
+            youtube.youtube_deeplink(with_list), f"v={VIDEO}&list={playlist}"
+        )
+
     def test_app_id_prefers_webos4_leanback(self) -> None:
         apps = [
             {"id": "youtube.leanback.other", "title": "YouTube"},

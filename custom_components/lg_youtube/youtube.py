@@ -1,11 +1,9 @@
 """Parse YouTube URLs into the target string LG webOS 4 YouTube expects.
 
-The launch payload matches klattimer/LGWebOSRemote ``openYoutubeURL`` and the
-webOS 4 path in Hybirdss/smartest-tv: app id ``youtube.leanback.v4`` with
-
-    params.contentTarget = "http://www.youtube.com/tv?v=<video id>"
-
 A normal ``/watch?v=`` browser link is not what the leanback app reads.
+The stored content target keeps the leanback address. The launch itself
+sends ``v=<video id>``: the full address makes webOS 4 boot YouTube, then
+load that page, so the app opens and shows the loading screen twice.
 """
 
 from __future__ import annotations
@@ -73,6 +71,19 @@ def parse_youtube_target(raw: str) -> YoutubeTarget:
     if video_id is None and playlist_id is None:
         raise ValueError(f"No YouTube video or playlist id in: {raw.strip()}")
     return _build_target(video_id, playlist_id)
+
+
+def youtube_deeplink(target: YoutubeTarget) -> str:
+    """Return ``v=<id>`` (and a playlist id) for one YouTube launch.
+
+    The app is registered for that parameter. Passing the full
+    ``http://www.youtube.com/tv`` address starts the app, then the app
+    loads the address and shows its loading screen a second time.
+    """
+    prefix = f"{YOUTUBE_TV_BASE}?"
+    if target.content_target.startswith(prefix):
+        return target.content_target.removeprefix(prefix)
+    return target.content_target
 
 
 def find_youtube_app_id(apps: object) -> str:

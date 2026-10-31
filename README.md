@@ -4,21 +4,21 @@
 
 Home Assistant custom integration that takes a YouTube URL and opens that video on an LG webOS TV. Written for a **32LM6300PCB on webOS 4.10**, and it uses the same launch the existing webOS tools use on that generation.
 
-The TV's YouTube app id is `youtube.leanback.v4`. The video is not passed as a normal browser link. It is passed as:
+The TV's YouTube app id is `youtube.leanback.v4`. The video is not passed as a normal browser link. It is passed as one launch:
 
 ```text
 ssap://system.launcher/launch
 {
   "id": "youtube.leanback.v4",
   "params": {
-    "contentTarget": "http://www.youtube.com/tv?v=VIDEO_ID"
+    "contentTarget": "v=VIDEO_ID"
   }
 }
 ```
 
-That payload is what [klattimer/LGWebOSRemote](https://github.com/klattimer/LGWebOSRemote) sends from `openYoutubeURL`, and the same shape [Hybirdss/smartest-tv](https://github.com/Hybirdss/smartest-tv) uses for YouTube. The socket library is [aiowebostv](https://github.com/home-assistant-libs/aiowebostv) 0.10.0, which is the client the built-in [LG webOS TV](https://www.home-assistant.io/integrations/webostv/) integration uses. On webOS 4 it connects to `ws://<tv>:3000` first.
+`v=VIDEO_ID` is the deeplink the YouTube app is registered for. The full `http://www.youtube.com/tv?v=VIDEO_ID` address, which [klattimer/LGWebOSRemote](https://github.com/klattimer/LGWebOSRemote) and [Hybirdss/smartest-tv](https://github.com/Hybirdss/smartest-tv) send, makes this set boot the app and then load that page, so YouTube shows its loading screen, opens again, and loads again. The socket library is [aiowebostv](https://github.com/home-assistant-libs/aiowebostv) 0.10.0, which is the client the built-in [LG webOS TV](https://www.home-assistant.io/integrations/webostv/) integration uses. On webOS 4 it connects to `ws://<tv>:3000` first.
 
-webOS 4 ignores a second launch while YouTube is already on screen, so a new URL closes YouTube, waits briefly, then launches again.
+webOS 4 ignores a new launch while YouTube is already on screen. A new URL closes YouTube only in that case, waits briefly, then launches once. A cold start does not close the app first, and a repeated request for the same video is ignored while the first launch is still opening.
 
 ## Install
 
@@ -83,8 +83,8 @@ The player can also turn the TV on (when a MAC is set) and off, and it can set v
 
 Open **Configure** on the integration:
 
-- **Close YouTube before opening a new video** should stay on for webOS 4.10.
-- **Launch method** defaults to `contentTarget (webOS 4)`. The other two match older `contentId` examples from the Home Assistant community and from pylgtv: the bare video id, or the `http://www.youtube.com/tv?v=` URL placed in `contentId`.
+- **Close YouTube before opening a new video** stays on. It runs only when YouTube is already the app on screen.
+- **Launch method** defaults to `contentTarget (v= video id)`. That is one launch. The other two match older `contentId` examples: the bare video id, or the leanback `http://www.youtube.com/tv?v=` address placed in `contentId`. The leanback address can make the app load twice.
 - **YouTube app id** stays `youtube.leanback.v4` unless the TV listed a different YouTube id while pairing.
 
 ## One controller at a time
