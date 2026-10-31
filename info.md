@@ -15,6 +15,7 @@ Requires Home Assistant 2025.1 or newer.
 5. Click **Add**, then download **LG YouTube**.
 6. Restart Home Assistant if HACS asks you to.
 7. **Settings → Devices & services → Add integration → LG YouTube**.
+8. Select the TV already set up in the LG webOS TV integration. YouTube uses that connection, so the media player stays connected. Pair separately only for a TV that is not in that list.
 
 ## Use
 

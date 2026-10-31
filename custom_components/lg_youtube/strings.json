@@ -3,8 +3,15 @@
     "flow_title": "{name}",
     "step": {
       "user": {
-        "title": "Connect to the LG TV",
-        "description": "The TV must be on and on the same network. webOS 4 (including the 32LM6300) is reached on its local IP address. The MAC address is only used to wake the TV.",
+        "title": "Select the LG TV",
+        "description": "Select the TV already set up in the LG webOS TV integration. YouTube uses that connection, so the media player stays connected. Pair separately only for a TV that is not in that list.",
+        "data": {
+          "webos_entity": "TV"
+        }
+      },
+      "manual": {
+        "title": "Pair a TV",
+        "description": "Use this only when the TV is not already set up in the LG webOS TV integration. The TV must be on. The MAC address is only used to wake it.",
         "data": {
           "host": "Host",
           "mac": "MAC address"
@@ -28,6 +35,13 @@
         "data": {
           "host": "Host",
           "mac": "MAC address"
+        }
+      },
+      "reconfigure_link": {
+        "title": "Select the LG TV",
+        "description": "Select the TV already set up in the LG webOS TV integration. YouTube keeps using that connection.",
+        "data": {
+          "webos_entity": "TV"
         }
       }
     },

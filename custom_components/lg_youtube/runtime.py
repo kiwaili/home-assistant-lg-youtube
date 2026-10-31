@@ -6,30 +6,39 @@ import asyncio
 from collections.abc import Callable
 import logging
 import time
+from typing import Any
 
 import aiohttp
 from aiowebostv import WebOsClient, WebOsTvCommandError, WebOsTvPairError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_CLIENT_SECRET, CONF_HOST, CONF_MAC, CONF_MODEL
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CLOSE_SETTLE_SECONDS,
     CONF_APP_ID,
     CONF_CLOSE_BEFORE_PLAY,
     CONF_LAUNCH_METHOD,
+    CONF_SOURCE,
     CONF_SW_VERSION,
+    CONF_WEBOS_ENTITY,
     CONNECT_TIMEOUT_SECONDS,
     DEFAULT_YOUTUBE_APP_ID,
     DOMAIN,
+    EP_CLOSE,
+    EP_LAUNCH,
     LAUNCH_CONTENT_ID,
     LAUNCH_CONTENT_ID_URL,
     LAUNCH_CONTENT_TARGET,
+    SOURCE_WEBOSTV,
     WAKE_TIMEOUT_SECONDS,
+    WEBOSTV_DOMAIN,
 )
 from .net import send_wake_on_lan
 from .youtube import YoutubeTarget, parse_youtube_target
@@ -43,6 +52,8 @@ _CONNECT_ERRORS = (
     WebOsTvCommandError,
     aiohttp.ClientError,
 )
+_COMMAND_ERRORS = (WebOsTvCommandError, HomeAssistantError)
+_OFF_STATES = {"off", "unavailable", "unknown"}
 
 
 class LgYoutubeRuntime:
@@ -52,17 +63,30 @@ class LgYoutubeRuntime:
         """Create a client. Connection happens in async_setup."""
         self.hass = hass
         self.entry = entry
-        self.host: str = entry.data[CONF_HOST]
+        self.host: str = entry.data.get(CONF_HOST, "")
         self.last_input: str | None = None
         self.last_target: YoutubeTarget | None = None
         self._listeners: list[Callable[[], None]] = []
         self._lock = asyncio.Lock()
-        self.client = WebOsClient(
-            self.host,
-            entry.data.get(CONF_CLIENT_SECRET),
-            connect_timeout=CONNECT_TIMEOUT_SECONDS,
-            client_session=async_get_clientsession(hass),
-        )
+        self._unsub_linked: Callable[[], None] | None = None
+        self.client: WebOsClient | None = None
+        if not self.uses_webos_connection:
+            self.client = WebOsClient(
+                self.host,
+                entry.data.get(CONF_CLIENT_SECRET),
+                connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                client_session=async_get_clientsession(hass),
+            )
+
+    @property
+    def uses_webos_connection(self) -> bool:
+        """True when commands go through the LG webOS TV integration."""
+        return self.entry.data.get(CONF_SOURCE) == SOURCE_WEBOSTV
+
+    @property
+    def webos_entity_id(self) -> str:
+        """Media player from the LG webOS TV integration."""
+        return str(self.entry.data.get(CONF_WEBOS_ENTITY, ""))
 
     @property
     def unique_id(self) -> str:
@@ -91,6 +115,10 @@ class LgYoutubeRuntime:
     @property
     def device_info(self) -> DeviceInfo:
         """Device registry record shared by the player and the URL box."""
+        if self.uses_webos_connection:
+            linked = self._linked_device_info()
+            if linked is not None:
+                return linked
         return DeviceInfo(
             identifiers={(DOMAIN, self.unique_id)},
             manufacturer="LG",
@@ -98,6 +126,17 @@ class LgYoutubeRuntime:
             name=self.entry.title,
             sw_version=self.entry.data.get(CONF_SW_VERSION),
         )
+
+    def _linked_device_info(self) -> DeviceInfo | None:
+        """Attach entities to the device the LG webOS TV integration already owns."""
+        registry = er.async_get(self.hass)
+        entity = registry.async_get(self.webos_entity_id)
+        if entity is None or not entity.device_id:
+            return None
+        device = dr.async_get(self.hass).async_get(entity.device_id)
+        if device is None or not device.identifiers:
+            return None
+        return DeviceInfo(identifiers=set(device.identifiers))
 
     def add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         """Register a callback invoked when playback or TV state changes."""
@@ -128,6 +167,18 @@ class LgYoutubeRuntime:
 
     async def async_setup(self) -> None:
         """Subscribe to TV pushes and connect if the set is already on."""
+        if self.uses_webos_connection:
+            self._unsub_linked = async_track_state_change_event(
+                self.hass, [self.webos_entity_id], self._on_linked_state
+            )
+            _LOGGER.info(
+                "Using the LG webOS TV connection for %s (%s)",
+                self.entry.title,
+                self.webos_entity_id,
+            )
+            return
+
+        assert self.client is not None
         await self.client.register_state_update_callback(self._on_tv_state)
         try:
             await self.client.connect()
@@ -148,9 +199,18 @@ class LgYoutubeRuntime:
             )
 
     async def async_shutdown(self) -> None:
-        """Drop the websocket. The client key stays in the config entry."""
+        """Drop the websocket. A linked TV keeps the LG webOS TV connection."""
+        if self._unsub_linked is not None:
+            self._unsub_linked()
+            self._unsub_linked = None
+        if self.client is None:
+            return
         self.client.clear_state_update_callbacks()
         await self.client.disconnect()
+
+    @callback
+    def _on_linked_state(self, _event: object) -> None:
+        self.publish()
 
     async def async_play(self, raw_url: str) -> None:
         """Wake the TV if needed and open the YouTube URL."""
@@ -175,45 +235,82 @@ class LgYoutubeRuntime:
     async def async_turn_off(self) -> None:
         """Turn the TV off. The set has to be reachable on the network."""
         async with self._lock:
+            if self.uses_webos_connection:
+                await self._media_player_service("turn_off")
+                return
             await self.async_ensure_connected(wake=False)
+            assert self.client is not None
             await self.client.power_off()
 
     async def async_set_volume(self, level: int) -> None:
         """Set the TV volume from 0 to 100."""
         async with self._lock:
+            if self.uses_webos_connection:
+                await self._media_player_service(
+                    "volume_set", volume_level=max(0, min(100, level)) / 100
+                )
+                return
             await self.async_ensure_connected(wake=False)
+            assert self.client is not None
             await self.client.set_volume(max(0, min(100, level)))
 
     async def async_mute(self, mute: bool) -> None:
         """Mute or unmute."""
         async with self._lock:
+            if self.uses_webos_connection:
+                await self._media_player_service("volume_mute", is_volume_muted=mute)
+                return
             await self.async_ensure_connected(wake=False)
+            assert self.client is not None
             await self.client.set_mute(mute)
 
     async def async_volume_up(self) -> None:
         """Volume up one step."""
         async with self._lock:
+            if self.uses_webos_connection:
+                await self._media_player_service("volume_up")
+                return
             await self.async_ensure_connected(wake=False)
+            assert self.client is not None
             await self.client.volume_up()
 
     async def async_volume_down(self) -> None:
         """Volume down one step."""
         async with self._lock:
+            if self.uses_webos_connection:
+                await self._media_player_service("volume_down")
+                return
             await self.async_ensure_connected(wake=False)
+            assert self.client is not None
             await self.client.volume_down()
 
     async def async_media_play(self) -> None:
         """Send play to the current app."""
+        if self.uses_webos_connection:
+            async with self._lock:
+                await self._media_player_service("media_play")
+            return
         await self._media_command("play")
 
     async def async_media_pause(self) -> None:
         """Send pause to the current app."""
+        if self.uses_webos_connection:
+            async with self._lock:
+                await self._media_player_service("media_pause")
+            return
         await self._media_command("pause")
 
     async def async_media_stop(self) -> None:
         """Close YouTube when it is in front, otherwise send stop."""
         async with self._lock:
+            if self.uses_webos_connection:
+                try:
+                    await self._tv_request(EP_CLOSE, {"id": self.youtube_app_id})
+                except _COMMAND_ERRORS:
+                    await self._media_player_service("media_stop")
+                return
             await self.async_ensure_connected(wake=False)
+            assert self.client is not None
             app_id = self.youtube_app_id
             if self.client.tv_state.current_app_id == app_id:
                 await self.client.close_app(app_id)
@@ -222,6 +319,11 @@ class LgYoutubeRuntime:
 
     async def async_ensure_connected(self, *, wake: bool) -> None:
         """Connect, optionally waking the TV first. Caller holds the lock."""
+        if self.uses_webos_connection:
+            await self._ensure_webos_ready(wake=wake)
+            return
+
+        assert self.client is not None
         if self.client.is_connected():
             return
 
@@ -269,8 +371,8 @@ class LgYoutubeRuntime:
         app_id = self.youtube_app_id
         if self.close_before_play:
             try:
-                await self.client.close_app(app_id)
-            except WebOsTvCommandError:
+                await self._tv_request(EP_CLOSE, {"id": app_id})
+            except _COMMAND_ERRORS:
                 _LOGGER.debug("YouTube was not running (%s)", app_id)
             else:
                 await asyncio.sleep(CLOSE_SETTLE_SECONDS)
@@ -281,7 +383,7 @@ class LgYoutubeRuntime:
         )
         try:
             await self._launch_with_method(app_id, target, method)
-        except WebOsTvCommandError:
+        except _COMMAND_ERRORS:
             fallback = (
                 LAUNCH_CONTENT_ID
                 if method == LAUNCH_CONTENT_TARGET
@@ -294,14 +396,64 @@ class LgYoutubeRuntime:
         self, app_id: str, target: YoutubeTarget, method: str
     ) -> None:
         if method == LAUNCH_CONTENT_ID and target.video_id:
-            await self.client.launch_app_with_content_id(app_id, target.video_id)
+            await self._tv_request(EP_LAUNCH, {"id": app_id, "contentId": target.video_id})
             return
         if method == LAUNCH_CONTENT_ID_URL:
-            await self.client.launch_app_with_content_id(app_id, target.content_target)
+            await self._tv_request(
+                EP_LAUNCH, {"id": app_id, "contentId": target.content_target}
+            )
             return
-        await self.client.launch_app_with_params(
-            app_id, {"contentTarget": target.content_target}
+        await self._tv_request(
+            EP_LAUNCH,
+            {"id": app_id, "params": {"contentTarget": target.content_target}},
         )
+
+    async def _tv_request(self, command: str, payload: dict[str, Any]) -> None:
+        """Send one SSAP command, through the existing webOS connection when linked."""
+        if self.uses_webos_connection:
+            await self.hass.services.async_call(
+                WEBOSTV_DOMAIN,
+                "command",
+                {
+                    "entity_id": self.webos_entity_id,
+                    "command": command,
+                    "payload": payload,
+                },
+                blocking=True,
+            )
+            return
+        if self.client is None:
+            raise HomeAssistantError("The LG TV is not connected.")
+        await self.client.request(command, payload)
+
+    async def _media_player_service(self, service: str, **data: Any) -> None:
+        """Forward a media player action to the LG webOS TV entity."""
+        await self.hass.services.async_call(
+            "media_player",
+            service,
+            {"entity_id": self.webos_entity_id, **data},
+            blocking=True,
+        )
+
+    async def _ensure_webos_ready(self, *, wake: bool) -> None:
+        """Wait until the already configured LG webOS TV entity is on."""
+        state = self.hass.states.get(self.webos_entity_id)
+        if state is None:
+            raise HomeAssistantError(
+                "The LG webOS TV entity is no longer available. Select the TV again."
+            )
+        if state.state not in _OFF_STATES:
+            return
+        if not wake:
+            raise HomeAssistantError("The LG TV is off.")
+        await self._media_player_service("turn_on")
+        deadline = time.monotonic() + WAKE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(2)
+            state = self.hass.states.get(self.webos_entity_id)
+            if state is not None and state.state not in _OFF_STATES:
+                return
+        raise HomeAssistantError("The LG TV did not come online.")
 
     async def _media_command(self, name: str) -> None:
         async with self._lock:
@@ -309,6 +461,7 @@ class LgYoutubeRuntime:
             await self._send_media(name)
 
     async def _send_media(self, name: str) -> None:
+        assert self.client is not None
         try:
             await getattr(self.client, name)()
         except WebOsTvCommandError as err:

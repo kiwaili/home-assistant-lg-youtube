@@ -1,6 +1,7 @@
 {
   "domain": "lg_youtube",
   "name": "LG YouTube",
+  "after_dependencies": ["webostv"],
   "codeowners": ["@kiwaili"],
   "config_flow": true,
   "documentation": "https://github.com/kiwaili/home-assistant-lg-youtube",

@@ -44,14 +44,11 @@ Restart Home Assistant, then add the **LG YouTube** integration.
 
 ## Pairing
 
-1. Turn the TV on. It has to be on the same LAN as Home Assistant.
-2. Enter the TV's IP address. A MAC address is optional and is only used for Wake-on-LAN.
-3. Submit the pairing step, then accept the prompt on the TV. The prompt only stays up for a few seconds.
-4. The integration reads the app list and stores `youtube.leanback.v4` when the TV reports it.
+Add the built-in **LG webOS TV** integration first, then add **LG YouTube** and select that TV. YouTube sends commands through that connection, so the webOS media player stays connected.
 
-The client key is stored in the config entry, the same way the built-in LG webOS TV integration stores it.
+Choose **Pair a TV that is not in this list** only when the set is not already in the LG webOS TV integration. The TV has to be on. Accept the prompt on the TV within a few seconds. A MAC address is optional and is only used to wake it.
 
-If the TV's IP changes later, open the device and choose **Reconfigure**. That screen is also where you add or clear the MAC address. Wake-on-LAN needs the TV's **Mobile On** / **LG Connect Apps** / network standby option enabled, and Home Assistant has to be able to broadcast on the LAN.
+**Reconfigure** changes which LG webOS TV is selected. For a TV that was paired separately, that screen is where the address and MAC address are changed. Wake-on-LAN needs the TV's **Mobile On** / **LG Connect Apps** / network standby option enabled, and Home Assistant has to be able to broadcast on the LAN.
 
 ## Play a video
 
@@ -64,7 +61,7 @@ Any of these are accepted: a `youtube.com/watch` link, a `youtu.be` link, Shorts
 ```yaml
 action: lg_youtube.play
 target:
-  entity_id: media_player.lg_tv
+  entity_id: media_player.lg_tv_youtube
 data:
   url: "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 ```
@@ -74,7 +71,7 @@ data:
 ```yaml
 action: media_player.play_media
 target:
-  entity_id: media_player.lg_tv
+  entity_id: media_player.lg_tv_youtube
 data:
   media_content_type: video
   media_content_id: "https://youtu.be/jNQXAC9IVRw"
@@ -92,7 +89,7 @@ Open **Configure** on the integration:
 
 ## One controller at a time
 
-This integration keeps its own connection to the TV. webOS 4 often accepts only one SSAP client. If the built-in **LG webOS TV** integration is also connected to the same set, one of the two sessions can drop. Use this integration for the YouTube URL flow, or use the built-in integration's `webostv.command` action with the payload above if you already rely on that connection.
+When you select a TV from the LG webOS TV integration, this integration does not open a second connection. webOS 4 often accepts only one controller, and the built-in media player keeps its session. A separately paired TV uses its own connection.
 
 ## Development
 

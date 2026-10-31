@@ -19,7 +19,11 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_CLIENT_SECRET, CONF_HOST, CONF_MAC, CONF_MODEL
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.ssdp import (
     ATTR_UPNP_FRIENDLY_NAME,
@@ -31,7 +35,9 @@ from .const import (
     CONF_APP_ID,
     CONF_CLOSE_BEFORE_PLAY,
     CONF_LAUNCH_METHOD,
+    CONF_SOURCE,
     CONF_SW_VERSION,
+    CONF_WEBOS_ENTITY,
     CONNECT_TIMEOUT_SECONDS,
     DEFAULT_NAME,
     DEFAULT_YOUTUBE_APP_ID,
@@ -39,18 +45,51 @@ from .const import (
     LAUNCH_CONTENT_ID,
     LAUNCH_CONTENT_ID_URL,
     LAUNCH_CONTENT_TARGET,
+    PAIR_OTHER,
+    SOURCE_PAIRED,
+    SOURCE_WEBOSTV,
+    WEBOSTV_DOMAIN,
 )
 from .net import normalize_host, normalize_mac
 from .youtube import find_youtube_app_id
 
 _LOGGER = logging.getLogger(__name__)
 
-_USER_SCHEMA = vol.Schema(
+_MANUAL_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): cv.string,
         vol.Optional(CONF_MAC): cv.string,
     }
 )
+
+
+def webos_tv_choices(hass) -> dict[str, str]:
+    """Map each LG webOS TV media player to a label."""
+    registry = er.async_get(hass)
+    devices = dr.async_get(hass)
+    choices: dict[str, str] = {}
+    for entity in registry.entities.values():
+        if entity.platform != WEBOSTV_DOMAIN or entity.domain != "media_player":
+            continue
+        if entity.disabled_by is not None:
+            continue
+        label = entity.entity_id
+        if entity.device_id and (device := devices.async_get(entity.device_id)):
+            label = device.name_by_user or device.name or label
+        choices[entity.entity_id] = label
+    return dict(sorted(choices.items(), key=lambda item: item[1].casefold()))
+
+
+def webos_entity_for_host(hass, host: str) -> str | None:
+    """Return the webOS media player for a TV address, when one is set up."""
+    registry = er.async_get(hass)
+    for config_entry in hass.config_entries.async_entries(WEBOSTV_DOMAIN):
+        if config_entry.data.get(CONF_HOST) != host:
+            continue
+        for entity in er.async_entries_for_config_entry(registry, config_entry.entry_id):
+            if entity.domain == "media_player" and entity.disabled_by is None:
+                return entity.entity_id
+    return None
 
 
 def _make_client(hass, host: str, key: str | None) -> WebOsClient:
@@ -106,7 +145,37 @@ class LgYoutubeConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for the TV address and an optional Wake-on-LAN MAC."""
+        """Prefer a TV that the LG webOS TV integration already connected."""
+        choices = webos_tv_choices(self.hass)
+        if not choices:
+            return await self.async_step_manual()
+
+        options = {
+            **choices,
+            PAIR_OTHER: "Pair a TV that is not in this list",
+        }
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            selected = user_input[CONF_WEBOS_ENTITY]
+            if selected == PAIR_OTHER:
+                return await self.async_step_manual()
+            if selected not in choices:
+                errors["base"] = "cannot_connect"
+            else:
+                return await self._async_create_linked(selected)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_WEBOS_ENTITY, default=next(iter(choices))): vol.In(options)}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pair a TV that is not already in the LG webOS TV integration."""
         errors: dict[str, str] = {}
         if user_input is not None:
             host = normalize_host(user_input[CONF_HOST])
@@ -121,14 +190,45 @@ class LgYoutubeConfigFlow(ConfigFlow, domain=DOMAIN):
                     except ValueError:
                         errors[CONF_MAC] = "invalid_mac"
                 if not errors:
+                    existing = webos_entity_for_host(self.hass, host)
+                    if existing:
+                        return await self._async_create_linked(existing)
                     self._host = host
                     self._mac = mac
                     self._async_abort_entries_match({CONF_HOST: self._host})
                     return await self.async_step_pairing()
 
         return self.async_show_form(
-            step_id="user", data_schema=_USER_SCHEMA, errors=errors
+            step_id="manual", data_schema=_MANUAL_SCHEMA, errors=errors
         )
+
+    async def _async_create_linked(self, entity_id: str) -> ConfigFlowResult:
+        """Store a pointer at the existing webOS media player. Do not pair."""
+        registry = er.async_get(self.hass)
+        entity = registry.async_get(entity_id)
+        if entity is None or entity.config_entry_id is None:
+            return self.async_abort(reason="cannot_connect")
+
+        webos_entry = self.hass.config_entries.async_get_entry(entity.config_entry_id)
+        if webos_entry is None:
+            return self.async_abort(reason="cannot_connect")
+
+        self._async_abort_entries_match({CONF_WEBOS_ENTITY: entity_id})
+        if webos_entry.unique_id:
+            await self.async_set_unique_id(
+                webos_entry.unique_id, raise_on_progress=False
+            )
+            self._abort_if_unique_id_configured({CONF_WEBOS_ENTITY: entity_id})
+
+        host = webos_entry.data.get(CONF_HOST, "")
+        title = webos_tv_choices(self.hass).get(entity_id, webos_entry.title)
+        data: dict[str, Any] = {
+            CONF_SOURCE: SOURCE_WEBOSTV,
+            CONF_WEBOS_ENTITY: entity_id,
+            CONF_HOST: host,
+            CONF_APP_ID: DEFAULT_YOUTUBE_APP_ID,
+        }
+        return self.async_create_entry(title=title, data=data)
 
     async def async_step_ssdp(
         self, discovery_info: SsdpServiceInfo
@@ -140,6 +240,9 @@ class LgYoutubeConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="cannot_connect")
 
         self._host = host
+        linked = webos_entity_for_host(self.hass, host)
+        if linked:
+            return await self._async_create_linked(linked)
         friendly = discovery_info.upnp.get(ATTR_UPNP_FRIENDLY_NAME, "")
         self._name = friendly.replace("[LG]", "LG").strip()
         udn = discovery_info.upnp.get(ATTR_UPNP_UDN)
@@ -201,6 +304,7 @@ class LgYoutubeConfigFlow(ConfigFlow, domain=DOMAIN):
             app_id = find_youtube_app_id(await client.get_apps())
 
         data: dict[str, Any] = {
+            CONF_SOURCE: SOURCE_PAIRED,
             CONF_HOST: self._host,
             CONF_CLIENT_SECRET: client.client_key,
             CONF_APP_ID: app_id,
@@ -253,9 +357,12 @@ class LgYoutubeConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Change the IP address or the Wake-on-LAN MAC."""
-        errors: dict[str, str] = {}
+        """Change the selected TV, or the address of a separately paired TV."""
         entry = self._get_reconfigure_entry()
+        if entry.data.get(CONF_SOURCE) == SOURCE_WEBOSTV:
+            return await self.async_step_reconfigure_link(user_input)
+
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             host = normalize_host(user_input[CONF_HOST])
@@ -314,6 +421,57 @@ class LgYoutubeConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+    async def async_step_reconfigure_link(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Point this entry at a different LG webOS TV media player."""
+        entry = self._get_reconfigure_entry()
+        choices = webos_tv_choices(self.hass)
+        if not choices:
+            return self.async_abort(reason="cannot_connect")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            selected = user_input[CONF_WEBOS_ENTITY]
+            if selected not in choices:
+                errors["base"] = "cannot_connect"
+            else:
+                return await self._async_relink(entry, selected)
+
+        current = entry.data.get(CONF_WEBOS_ENTITY)
+        default = current if current in choices else next(iter(choices))
+        return self.async_show_form(
+            step_id="reconfigure_link",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_WEBOS_ENTITY, default=default): vol.In(choices)}
+            ),
+            errors=errors,
+        )
+
+    async def _async_relink(
+        self, entry: ConfigEntry, entity_id: str
+    ) -> ConfigFlowResult:
+        registry = er.async_get(self.hass)
+        entity = registry.async_get(entity_id)
+        webos_entry = (
+            self.hass.config_entries.async_get_entry(entity.config_entry_id)
+            if entity is not None and entity.config_entry_id
+            else None
+        )
+        if webos_entry is None:
+            return self.async_abort(reason="cannot_connect")
+        if webos_entry.unique_id:
+            await self.async_set_unique_id(webos_entry.unique_id)
+            self._abort_if_unique_id_mismatch(reason="wrong_device")
+        data = {
+            **entry.data,
+            CONF_SOURCE: SOURCE_WEBOSTV,
+            CONF_WEBOS_ENTITY: entity_id,
+            CONF_HOST: webos_entry.data.get(CONF_HOST, ""),
+        }
+        title = webos_tv_choices(self.hass).get(entity_id, entry.title)
+        return self.async_update_reload_and_abort(entry, data=data, title=title)
 
 
 class LgYoutubeOptionsFlow(OptionsFlowWithReload):

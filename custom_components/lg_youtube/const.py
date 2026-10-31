@@ -11,7 +11,17 @@ DOMAIN = "lg_youtube"
 CONF_APP_ID = "app_id"
 CONF_CLOSE_BEFORE_PLAY = "close_before_play"
 CONF_LAUNCH_METHOD = "launch_method"
+CONF_SOURCE = "source"
 CONF_SW_VERSION = "sw_version"
+CONF_WEBOS_ENTITY = "webos_entity"
+
+SOURCE_WEBOSTV = "webostv"
+SOURCE_PAIRED = "paired"
+PAIR_OTHER = "pair_other"
+WEBOSTV_DOMAIN = "webostv"
+
+EP_LAUNCH = "system.launcher/launch"
+EP_CLOSE = "system.launcher/close"
 
 ATTR_URL = "url"
 SERVICE_PLAY = "play"

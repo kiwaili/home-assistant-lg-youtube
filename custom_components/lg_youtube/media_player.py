@@ -68,6 +68,8 @@ class LgYoutubeMediaPlayer(MediaPlayerEntity):
         self.runtime = runtime
         self._attr_unique_id = runtime.unique_id
         self._attr_device_info = runtime.device_info
+        if runtime.uses_webos_connection:
+            self._attr_name = "YouTube"
 
     async def async_added_to_hass(self) -> None:
         """Refresh when the TV pushes a state change."""
@@ -76,16 +78,31 @@ class LgYoutubeMediaPlayer(MediaPlayerEntity):
             self.runtime.add_listener(self.schedule_update_ha_state)
         )
 
+    def _linked_state(self):
+        """State of the media player owned by the LG webOS TV integration."""
+        return self.runtime.hass.states.get(self.runtime.webos_entity_id)
+
     @property
     def assumed_state(self) -> bool:
         """Volume is unknown until the websocket is up."""
-        return not self.runtime.client.is_connected()
+        if self.runtime.uses_webos_connection:
+            return self._linked_state() is None
+        client = self.runtime.client
+        return client is None or not client.is_connected()
 
     @property
     def state(self) -> MediaPlayerState:
         """Report off, idle, or playing."""
+        if self.runtime.uses_webos_connection:
+            linked = self._linked_state()
+            if linked is None or linked.state in {"off", "unavailable", "unknown"}:
+                return MediaPlayerState.OFF
+            try:
+                return MediaPlayerState(linked.state)
+            except ValueError:
+                return MediaPlayerState.IDLE
         client = self.runtime.client
-        if not client.is_connected() or not client.tv_state.is_on:
+        if client is None or not client.is_connected() or not client.tv_state.is_on:
             return MediaPlayerState.OFF
         if client.tv_state.current_app_id == self.runtime.youtube_app_id:
             return MediaPlayerState.PLAYING
@@ -94,7 +111,16 @@ class LgYoutubeMediaPlayer(MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume as a fraction, matching other Home Assistant players."""
-        volume = self.runtime.client.tv_state.volume
+        if self.runtime.uses_webos_connection:
+            linked = self._linked_state()
+            if linked is None:
+                return None
+            level = linked.attributes.get("volume_level")
+            return float(level) if isinstance(level, (int, float)) else None
+        client = self.runtime.client
+        if client is None:
+            return None
+        volume = client.tv_state.volume
         if volume is None:
             return None
         return max(0.0, min(1.0, volume / 100))
@@ -102,7 +128,16 @@ class LgYoutubeMediaPlayer(MediaPlayerEntity):
     @property
     def is_volume_muted(self) -> bool | None:
         """Mute flag from the TV, when it has reported one."""
-        return self.runtime.client.tv_state.muted
+        if self.runtime.uses_webos_connection:
+            linked = self._linked_state()
+            if linked is None:
+                return None
+            muted = linked.attributes.get("is_volume_muted")
+            return muted if isinstance(muted, bool) else None
+        client = self.runtime.client
+        if client is None:
+            return None
+        return client.tv_state.muted
 
     @property
     def media_title(self) -> str | None:
