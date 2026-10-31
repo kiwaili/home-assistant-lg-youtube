@@ -1,0 +1,14 @@
+{
+  "services": {
+    "play": {
+      "service": "mdi:youtube"
+    }
+  },
+  "entity": {
+    "text": {
+      "url": {
+        "default": "mdi:youtube"
+      }
+    }
+  }
+}

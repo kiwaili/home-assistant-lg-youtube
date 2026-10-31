@@ -1,0 +1,86 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to the LG TV",
+        "description": "The TV must be on and on the same network. webOS 4 (including the 32LM6300) is reached on its local IP address. The MAC address is only used to wake the TV.",
+        "data": {
+          "host": "Host",
+          "mac": "MAC address"
+        },
+        "data_description": {
+          "host": "IP address or host name. A pasted http:// URL is accepted.",
+          "mac": "Optional. Needed for the power button to turn the TV on."
+        }
+      },
+      "pairing": {
+        "title": "Pair with the TV",
+        "description": "Submit, then accept the connection prompt on the TV. The prompt only stays up for a few seconds."
+      },
+      "reauth_confirm": {
+        "title": "Pair with the TV again",
+        "description": "The TV rejected the saved key. Submit, then accept the new prompt on the TV."
+      },
+      "reconfigure": {
+        "title": "Update the TV address",
+        "description": "Use this when the TV gets a new IP address, or to add a MAC address for Wake-on-LAN. Leave the MAC blank to stop waking the TV.",
+        "data": {
+          "host": "Host",
+          "mac": "MAC address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect. Turn the TV on and check the address.",
+      "error_pairing": "Pairing was rejected or timed out. Accept the prompt on the TV, then try again.",
+      "invalid_host": "Enter the TV's IP address or host name.",
+      "invalid_mac": "Enter a MAC address like aa:bb:cc:dd:ee:ff."
+    },
+    "abort": {
+      "already_configured": "This TV is already configured.",
+      "already_in_progress": "This TV is already being configured.",
+      "cannot_connect": "The discovered TV did not include an address.",
+      "reauth_successful": "Pairing updated.",
+      "reconfigure_successful": "TV address updated.",
+      "wrong_device": "That address is a different TV."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "YouTube launch",
+        "description": "webOS 4.10 opens YouTube with contentTarget set to http://www.youtube.com/tv?v=VIDEO_ID. Switch the launch method only if the app opens and the video does not.",
+        "data": {
+          "close_before_play": "Close YouTube before opening a new video",
+          "launch_method": "Launch method",
+          "app_id": "YouTube app id"
+        },
+        "data_description": {
+          "close_before_play": "webOS 4 ignores a second launch while YouTube is already on screen. Turn this off only if closing the app causes a problem.",
+          "launch_method": "contentTarget is the webOS 4 method. contentId sends the 11-character video id. contentId (tv URL) sends the http://www.youtube.com/tv link as contentId.",
+          "app_id": "Detected at pairing. youtube.leanback.v4 is the app on webOS 4.10."
+        }
+      }
+    }
+  },
+  "services": {
+    "play": {
+      "name": "Play YouTube",
+      "description": "Open a YouTube video or playlist on the LG TV.",
+      "fields": {
+        "url": {
+          "name": "YouTube URL",
+          "description": "A youtube.com link, a youtu.be link, a shorts link, or an 11-character video id."
+        }
+      }
+    }
+  },
+  "entity": {
+    "text": {
+      "url": {
+        "name": "YouTube URL"
+      }
+    }
+  }
+}
