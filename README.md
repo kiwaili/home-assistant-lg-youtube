@@ -1,5 +1,7 @@
 # LG YouTube
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kiwaili&repository=home-assistant-lg-youtube&category=integration)
+
 Home Assistant custom integration that takes a YouTube URL and opens that video on an LG webOS TV. Written for a **32LM6300PCB on webOS 4.10**, and it uses the same launch the existing webOS tools use on that generation.
 
 The TV's YouTube app id is `youtube.leanback.v4`. The video is not passed as a normal browser link. It is passed as:
@@ -20,17 +22,25 @@ webOS 4 ignores a second launch while YouTube is already on screen, so a new URL
 
 ## Install
 
-Requires Home Assistant 2025.1 or newer.
+Requires Home Assistant 2025.1 or newer, and [HACS](https://hacs.xyz/).
 
-Copy `custom_components/lg_youtube` from this repo into your Home Assistant config directory, so the files land here:
+[Open this repository in HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=kiwaili&repository=home-assistant-lg-youtube&category=integration), or add it by hand:
+
+1. In HACS, open **Integrations**.
+2. Open the menu in the top right and choose **Custom repositories**.
+3. Repository: `https://github.com/kiwaili/home-assistant-lg-youtube`
+4. Category: **Integration**.
+5. Click **Add**, then download **LG YouTube**.
+6. Restart Home Assistant if HACS asks you to.
+7. **Settings → Devices & services → Add integration → LG YouTube**.
+
+To install without HACS, copy `custom_components/lg_youtube` into your config directory so this file exists:
 
 ```text
 <config>/custom_components/lg_youtube/manifest.json
 ```
 
-Restart Home Assistant. Then **Settings → Devices & services → Add integration → LG YouTube**.
-
-With HACS, add this repository as a custom integration and install **LG YouTube**.
+Restart Home Assistant, then add the **LG YouTube** integration.
 
 ## Pairing
 
